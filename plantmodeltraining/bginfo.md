@@ -1,0 +1,112 @@
+# plant training info
+## prelim
+- take pre-trained model on a large general image set and fine tune it on plant images
+    - present training can already detect edges, textures, and shapes
+    - good backbones: resnet, efficientnet, mobilenet(lightweight)
+- baseline already defined
+    - baseline - frozen imagenet backbone with retrained head, compared against fine tuned model using accuracy and macro f1 on held out test set
+## design
+- 2 classifiers with a lookup table
+    - species classifier
+        - species model made with the gbif data
+        - https://huggingface.co/datasets/juppy44/gbif-plants-raw
+        - target = 85%+ accuracy
+    - condition classifier
+        - predict visible symptoms instead of named diseases
+            - ex: healthy, yellowing, brown or crispy tops, spots, wilting, pest damage
+            - looks similar across plant types so a model can generalize
+            - care advice lookup table then maps each symptom to advice
+                - ex: yellowing: check overwatering and drainage
+        - use plantvillage as a supplementary source - map its classes to the existing symptom categories, then mix in whatever houseplant or leaf-health data that you can find
+        - also check plantdoc and gaggle houseplant disease sets
+        - use label suffix to derive healthy vs disease and report that as a separate metric
+        - target is 80%+ accuracy with high recall for disease class
+    - care advice not determined by a model - deterministically determined by dictionary mapping each predicted condition to treatment text
+        - satisfies the advice must match the predicted condition target
+- data flow
+    - image → species → condition → advice
+        - if the species doesn’t exist in the condition classifier dataset return an error message saying that a health check is unavailable for that type of plant instead of a hallucination/wrong guess
+    - possible limitations
+        - gbif data leakage - same observer or observation can appear in both train and test - if species accuracy is suspiciously high, deduplicate or split by observer
+    - licensing
+        - gbif images carry per image licenses, some are non commercial which needs to be mentioned in the report
+        - TODO: check if the dataset rows include a license field
+    - compute power isn’t a concern bc everything is running on collab vm
+        - mixed precision and keeping image on colab local disk instead of reading from Drive for every epoch will speed things up
+    - baseline species count
+        - 20 species is good for a baseline but depending on the breadth of data we want
+- class plant photos final testing data
+    - never train or tune on this data - use it once per final model
+        - choose epochs and learning rate on the validation split from final data
+    - report 2 test numbers
+        - in-distribution split from gbif or plantvillage
+        - in-distribution split from the phone photos as well
+    - check labels - for both targets to be evaluated each photo needs a species and health label
+    - check overlap - the phone picture species have to overlap with training species there's nothing to measure
+        - count images per species
+        - since small set report per class results instead of just overall accuracy
+    - check provenance
+        - confirm where the photos came from and that they contain no faces, locations, or other identifying data
+- current data from gbif dataset will not match the class plant pictures
+    - to successfully test model accuracy and recall on the class plant pictures we need a curated species list
+    - most likely 30-60 species, houseplants, bushes, trees, everyday plants
+        - base this list on the phone test set and cover those species first so that they can be evaluated on
+- pull images by species name instead of random streaming
+    - maybe find a kaggle houseplant dataset or a inaturalist api as a fallback
+- look at samples before training to make sure that photos are relevant to what were actually looking for species wise
+
+# Colab notebook info
+## contents
+- setup and config
+    - paths/settings in one cell
+    - dataset urls, split, cps, and metrics all save to drive so state persists
+- species availability scan → run this first once evb agrees on what species that the model should recognize
+    - draft list of ~45 everyday plants (houseplants, trees, shrubs) output to a civ file that marks the data robustness of each species (okay, thin, needing another source)
+    - this is a placeholder to edit once the team agrees on species
+- download/clean/split
+    - retries on failed downloads, removes corrupt and duplicate images, and shows random samples
+    - stratified 70/15/15 split is saved to a csv file (so never overwritten by accident) so every model uses the same test images
+        - share of images used for each purpose
+        - 70% train - model learns from these images, its weights are updated on them
+        - 15% validation - the model never trains on these they're used during training to see how well the model generalizes in order to pick the best epoch
+            - the notebook keeps the cp with the best validation macro f1
+            - also to tune settings like learning rate
+            - since decisions are made with this data it gradually becomes seen over tiem
+        - 15% test - model doesn’t touch these until the end
+            - they give one honest score which is the number that goes in the report compared against the 85% target accuracy
+- with ~80 images per species the split is about 56 train, 12 val, and 12 test images per species
+    - this means that recall numbers are much more fragile if our data quality is shaky - even better reason to have a larger labeled phone-image set
+- training and evaluation
+    - run_pipeline() trains the frozen-backbone baseline then fine tunes it
+    - it picks cps on validation macro f1 so test data isn't used for choices
+    - reports accuracy, macro f1, per class recall, and a confusion matrix, also saves a baseline vs fine tuned comparison table that can be used in the final report
+- predict()
+    - returns top 3 species with confidence scores
+- phone photo hook - evaluate_phone_set()
+    - run once photos are labeled via csv
+- health model and case advice
+    - this pipeline works for any folder per class health dataset
+    - if a class name contains the word healthy it reports healthy vs diseased accuracy and diseased recall
+## models
+- baseline and finetuned model use resnet50
+    - baseline:
+        - resnet50 pretrained on imagine with a frozen abckbone
+        - only has a new final layer that's trained on the plant pictures
+        - meant to show how well generic imagine features can work with no adaptation
+    - fine tuned
+        - same pretrained resnet50 model starting from the baseline position with all layers unfrozen and trained at a low learning rate on the plant images
+        - this is the final product model - starts from the same weights as the baseline
+- comparison is baseline vs finetuned → shows how much adapting the network helps
+- the species model and the condition model are 2 separate copies of the same process (fine tuned)
+    - each model gets its own final layer and own checkpoint, and is also trained on its own dataset
+
+
+## Other things needed right now
+- **More phone-taken plant pictures** - about 10+ labeled photos per species
+- **Lookup Table**
+    - we need a lookup table for the disease classifying model, something like disease as a key and symptoms as the value
+- **Labels:** a spreadsheet with filename, species, health_label. 
+    - We still need to decide on the health labels that we’ll be using
+- **Species list:** 
+    - Also need to agree on a species list - needed for data collection and the phone-taken plant dataset.
+
