@@ -9,7 +9,7 @@
 - 2 classifiers with a lookup table
     - species classifier
         - species model made with the gbif data
-        - https://huggingface.co/datasets/juppy44/gbif-plants-raw
+        - [species model dataset](https://huggingface.co/datasets/juppy44/gbif-plants-raw)
         - target = 85%+ accuracy
     - condition classifier
         - predict visible symptoms instead of named diseases
@@ -17,7 +17,7 @@
             - looks similar across plant types so a model can generalize
             - care advice lookup table then maps each symptom to advice
                 - ex: yellowing: check overwatering and drainage
-        - use [https://www.kaggle.com/datasets/emmarex/plantdisease](plantvillage) as a supplementary source - map its classes to the existing symptom categories, then mix in whatever houseplant or leaf-health data that you can find
+        - use [plantvilliage](https://www.kaggle.com/datasets/emmarex/plantdisease) as a supplementary source - map its classes to the existing symptom categories, then mix in whatever houseplant or leaf-health data that you can find
         - also check plantdoc and gaggle houseplant disease sets
         - use label suffix to derive healthy vs disease and report that as a separate metric
         - target is 80%+ accuracy with high recall for disease class
